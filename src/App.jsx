@@ -17,6 +17,10 @@ import Navbar from './components/utils/Navbar';
 import CreateMLA from './components/districtAdmin/CreateMLA';
 import CreateMP from './components/districtAdmin/CreateMP';
 import VoterReg from './components/voter/VoterReg';
+
+// Import the new component
+import LandingPage from './components/home/LandingPage';
+
 function App() {
   // State to track if the admin is logged in
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
@@ -47,7 +51,7 @@ function App() {
       <Navbar isAdminLoggedIn={isAdminLoggedIn} onLogout={handleLogout} />
       <Routes>
         {/* --- Public Routes --- */}
-        <Route path='/' element={<Navigate to="/Register" replace />} />
+        <Route path='/' element={<LandingPage />} />     
         <Route path='/Register' element={<VoterReg />} />
         <Route path='/Verify' element={<FaceVerification />} />
         <Route path='/district-register' element={<DistrictAdminForm />} />
