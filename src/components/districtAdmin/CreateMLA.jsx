@@ -11,6 +11,10 @@ const CreateMLA = () => {
   const [district, setDistrict] = useState("");
   const [electionDate, setElectionDate] = useState("");
   const [constituency, setConstituency] = useState("");
+  
+  // ✅ NEW: Time States
+  const [startTime, setStartTime] = useState("07:00");
+  const [endTime, setEndTime] = useState("18:00");
 
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -57,16 +61,12 @@ const CreateMLA = () => {
   const normalizeBase64Photo = (raw) => {
     if (!raw) return null;
 
-    // If it's already a data URL, try to extract the base64 part
     if (typeof raw === "string" && raw.startsWith("data:")) {
       const comma = raw.indexOf(",");
       if (comma !== -1) raw = raw.slice(comma + 1);
     }
 
-    // Convert to string and remove whitespace/newlines
     let s = String(raw).replace(/\s+/g, "");
-
-    // Basic validation
     const maybeBase64 = /^[A-Za-z0-9+/=]+$/.test(s);
     if (!maybeBase64 || s.length < 80) return null;
 
@@ -74,7 +74,7 @@ const CreateMLA = () => {
   };
 
   // -------------------------------------
-  // Fetch candidate details and fill candidates[] (symbol text only, photo robust)
+  // Fetch candidate details
   // -------------------------------------
   const getCandidateDetails = async (acCode) => {
     setCandidates([]);
@@ -94,14 +94,8 @@ const CreateMLA = () => {
       });
 
       const text = await res.text();
-
-      // parse outer JSON if possible
       let first;
-      try {
-        first = JSON.parse(text);
-      } catch {
-        first = text;
-      }
+      try { first = JSON.parse(text); } catch { first = text; }
 
       const unwrapped = unwrapResponse(first);
       let arr = Array.isArray(unwrapped) ? unwrapped : [unwrapped];
@@ -113,16 +107,12 @@ const CreateMLA = () => {
 
           const name = c.Candidate_Name || "";
           const party = c.Party_Name || "";
-
-          // symbol: take the portion before ":" (e.g. "Lotus:1" -> "Lotus")
           const rawSymbol = c.Symbol ?? c.Symbol_Name ?? "";
           const symbol = String(rawSymbol).split(":")[0];
 
-          // candidate photo: robust normalization & validation
           let photo_url = null;
           let rawBase64 = "";
           if (c.Candidate_Photo) {
-            // If it's a data URL, remove prefix and validate
             let maybe = c.Candidate_Photo;
             if (typeof maybe === "string" && maybe.startsWith("data:")) {
               const comma = maybe.indexOf(",");
@@ -133,13 +123,10 @@ const CreateMLA = () => {
               photo_url = `data:image/jpeg;base64,${cleaned}`;
               rawBase64 = cleaned;
             } else {
-              // try normalize helper
               const normalized = normalizeBase64Photo(c.Candidate_Photo);
               if (normalized) {
                 photo_url = normalized;
                 rawBase64 = String(c.Candidate_Photo).replace(/^data:image\/[a-zA-Z]+;base64,/, "").replace(/\s+/g, "");
-              } else {
-                console.warn("Candidate_Photo not usable as base64 for candidate:", name, c.Candidate_Photo);
               }
             }
           }
@@ -149,7 +136,7 @@ const CreateMLA = () => {
             party,
             symbol,
             photo_url,
-            _photo_base64_raw: rawBase64, // string or ""
+            _photo_base64_raw: rawBase64,
           };
         })
         .filter(Boolean);
@@ -164,29 +151,20 @@ const CreateMLA = () => {
     }
   };
 
-  // -------------------------------------
-  // handle constituency change: set constituency id, auto-set district from imported data, fetch candidates
-  // -------------------------------------
   const onConstituencyChange = (selectedId) => {
     setConstituency(selectedId);
-
     const found = karnatakaConstituencies.find((c) => String(c.id) === String(selectedId));
     const derivedDistrict = found?.district ?? found?.district_name ?? found?.dist ?? "";
     if (derivedDistrict) setDistrict(String(derivedDistrict));
-
     getCandidateDetails(selectedId);
   };
 
-  // -------------------------------------
-  // handleSubmit: coerce all fields to strings, send raw base64 for photos
-  // -------------------------------------
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setMessage(null);
 
-    // map candidates to safe payload: strings only, photo raw base64 in candidate_photo_base64
     const candidatesPayload = candidates.map((c) => ({
       name: String(c.name ?? ""),
       party: String(c.party ?? ""),
@@ -203,9 +181,11 @@ const CreateMLA = () => {
       election_date: String(electionDate ?? ""),
       constituency: String(consisName ?? ""),
       candidates: candidatesPayload,
+      
+      // ✅ NEW: Send Times to Backend
+      start_time: startTime,
+      end_time: endTime,
     };
-
-    console.log("CreateElection payload:", consisName);
 
     try {
       const resp = await axios.post("http://localhost:8000/election/create", payload, {
@@ -222,27 +202,18 @@ const CreateMLA = () => {
       if (resp.status === 422) {
         const detail = resp.data?.detail;
         if (Array.isArray(detail)) {
-          const msg = detail
-            .map((d) => {
-              if (d.loc && d.msg) return `${d.loc.join(" > ")}: ${d.msg}`;
-              return JSON.stringify(d);
-            })
-            .join("; ");
+          const msg = detail.map((d) => (d.loc && d.msg ? `${d.loc.join(" > ")}: ${d.msg}` : JSON.stringify(d))).join("; ");
           setError(msg);
         } else {
           setError(JSON.stringify(resp.data));
         }
-        console.warn("422 validation:", resp.data);
         return;
       }
 
       setError(resp.data?.detail || `Server returned status ${resp.status}`);
-      console.error("Unexpected response:", resp);
     } catch (err) {
-      console.error("Request failed:", err);
       if (err.response) {
         setError(err.response.data?.detail || `Request failed with status ${err.response.status}`);
-        console.error("Server response body:", err.response.data);
       } else {
         setError(err.message || "Unknown error");
       }
@@ -251,9 +222,6 @@ const CreateMLA = () => {
     }
   };
 
-  // -------------------------------------
-  // UI
-  // -------------------------------------
   return (
     <div className="max-w-3xl mx-auto mt-10 p-6 bg-white rounded-2xl shadow">
       <h2 className="text-2xl font-semibold mb-6 text-center">Create MLA Election</h2>
@@ -277,7 +245,7 @@ const CreateMLA = () => {
           </select>
         </div>
 
-        {/* Election Type (read-only) */}
+        {/* Election Type */}
         <div>
           <label className="block mb-1 font-medium">Election Type</label>
           <input
@@ -288,7 +256,7 @@ const CreateMLA = () => {
           />
         </div>
 
-        {/* State (disabled) */}
+        {/* State */}
         <div>
           <label className="block mb-1 font-medium">State</label>
           <input
@@ -299,7 +267,7 @@ const CreateMLA = () => {
           />
         </div>
 
-        {/* District (auto-filled & disabled) */}
+        {/* District */}
         <div>
           <label className="block mb-1 font-medium">District</label>
           <input
@@ -323,16 +291,37 @@ const CreateMLA = () => {
           />
         </div>
 
+        {/* ✅ NEW: Start & End Time Inputs */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block mb-1 font-medium">Start Time</label>
+            <input 
+              type="time" 
+              className="w-full border px-3 py-2 rounded-lg"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label className="block mb-1 font-medium">End Time</label>
+            <input 
+              type="time" 
+              className="w-full border px-3 py-2 rounded-lg"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
         {/* Candidates listing */}
         <div className="mt-4">
           <h3 className="font-semibold mb-2">Candidates</h3>
-
           {loading && <div className="text-sm text-gray-500 mb-2">Loading candidates…</div>}
-
           {candidates.length === 0 && !loading && (
             <div className="text-sm text-gray-500 mb-2">No candidates loaded yet.</div>
           )}
-
           {candidates.map((c, i) => (
             <div key={i} className="border p-3 mb-3 rounded-lg space-y-2">
               <div className="flex items-center justify-between">
@@ -340,21 +329,12 @@ const CreateMLA = () => {
                   <div className="text-sm font-medium">{c.name}</div>
                   <div className="text-xs text-gray-600">{c.party}</div>
                 </div>
-
-                {/* Photo (if present and normalized) */}
                 {c.photo_url ? (
-                  <img
-                    src={c.photo_url}
-                    alt={`${c.name} photo`}
-                    style={{ width: 120, height: "auto", borderRadius: 6 }}
-                  />
+                  <img src={c.photo_url} alt={`${c.name} photo`} style={{ width: 120, height: "auto", borderRadius: 6 }} />
                 ) : (
-                  <div style={{ width: 120, height: 80, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "1px solid #eee", background: "#fafafa", fontSize: 12 }}>
-                    No photo
-                  </div>
+                  <div style={{ width: 120, height: 80, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "1px solid #eee", background: "#fafafa", fontSize: 12 }}>No photo</div>
                 )}
               </div>
-
               <div className="text-xs text-gray-800 mt-1">
                 Symbol: <span className="font-semibold">{c.symbol}</span>
               </div>
@@ -362,11 +342,7 @@ const CreateMLA = () => {
           ))}
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 mt-2"
-        >
+        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 mt-2">
           {loading ? "Creating..." : "Create Election"}
         </button>
       </form>

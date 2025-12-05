@@ -1,8 +1,7 @@
-// CreateMLAFromPCCandidates.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { parliamentaryConstituencies } from "../../data/constituencies"; // uses same source as PCCandidates.jsx
+import { parliamentaryConstituencies } from "../../data/constituencies"; 
 
 export default function CreateMP() {
   const navigate = useNavigate();
@@ -11,28 +10,28 @@ export default function CreateMP() {
   const [stateName] = useState("Karnataka");
   const [district, setDistrict] = useState("");
   const [electionDate, setElectionDate] = useState("");
-  const [constituency, setConstituency] = useState(""); // pc id string
+  const [constituency, setConstituency] = useState(""); 
 
-  const [data, setData] = useState(null); // raw array returned by GetPC_CandidateDetails (same shape as PCCandidates.jsx)
-  const [candidates, setCandidates] = useState([]); // normalized for display & payload
+  // ✅ NEW: Time States
+  const [startTime, setStartTime] = useState("07:00");
+  const [endTime, setEndTime] = useState("18:00");
+
+  const [data, setData] = useState(null); 
+  const [candidates, setCandidates] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState(null);
 
-  // === exact unwrap from your PCCandidates.jsx ===
   const unwrap = (value) => {
     let parsed = value;
     let safety = 0;
     while (safety++ < 15) {
-      // [{ d: "..." }]
       if (Array.isArray(parsed) && parsed.length === 1 && parsed[0] && typeof parsed[0].d === "string") {
         try { parsed = JSON.parse(parsed[0].d); continue; } catch { break; }
       }
-      // { d: "..." }
       if (!Array.isArray(parsed) && parsed && typeof parsed === "object" && typeof parsed.d === "string") {
         try { parsed = JSON.parse(parsed.d); continue; } catch { break; }
       }
-      // JSON string
       if (typeof parsed === "string") {
         try { parsed = JSON.parse(parsed); continue; } catch { break; }
       }
@@ -41,7 +40,6 @@ export default function CreateMP() {
     return parsed;
   };
 
-  // === fetch using the same endpoint & logic as PCCandidates.jsx ===
   const fetchPCCandidates = async (pcId) => {
     setData(null);
     setCandidates([]);
@@ -64,11 +62,8 @@ export default function CreateMP() {
       try { outer = JSON.parse(text); } catch { outer = text; }
 
       const unwrapped = unwrap(outer);
-
-      // normalize to array
       let arr = Array.isArray(unwrapped) ? unwrapped : [unwrapped];
 
-      // If elements are objects with d string, parse each and flatten
       arr = arr.flatMap((item) => {
         if (item && typeof item === "object" && typeof item.d === "string") {
           try {
@@ -79,10 +74,8 @@ export default function CreateMP() {
         return Array.isArray(item) ? item : [item];
       });
 
-      // keep raw data for debugging / display
       setData(arr);
 
-      // normalize into candidate list suitable for CreateMLA payload
       const normalized = arr
         .flatMap((it) => (Array.isArray(it) ? it : [it]))
         .filter(Boolean)
@@ -93,7 +86,6 @@ export default function CreateMP() {
           const rawSymbol = cand.Symbol ?? cand.Symbol_Name ?? "";
           const symbol = String(rawSymbol).split(":")[0];
 
-          // photo: strip data: prefix if present and validate-ish
           let rawBase64 = "";
           let photo_url = null;
           if (cand.Candidate_Photo) {
@@ -108,7 +100,7 @@ export default function CreateMP() {
                 rawBase64 = cleaned;
                 photo_url = `data:image/jpeg;base64,${cleaned}`;
               } else {
-                rawBase64 = ""; // not usable
+                rawBase64 = ""; 
               }
             } catch {
               rawBase64 = "";
@@ -136,16 +128,13 @@ export default function CreateMP() {
     }
   };
 
-  // when constituency (PC) changes
   const onConstituencyChange = (pcId) => {
     setConstituency(pcId);
-    // try to set district from the list if present
     const found = parliamentaryConstituencies.find((p) => String(p.id) === String(pcId));
     setDistrict(found.pc);
     fetchPCCandidates(pcId);
   };
 
-  // submit: same create logic as your CreateMLA
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -170,6 +159,10 @@ export default function CreateMP() {
         election_date: String(electionDate ?? ""),
         constituency: String(consisName ?? ""),
         candidates: candidatesPayload,
+        
+        // ✅ NEW: Send Times to Backend
+        start_time: startTime,
+        end_time: endTime,
       };
 
       console.log("Create payload:", payload);
@@ -244,6 +237,30 @@ export default function CreateMP() {
         <div>
           <label style={{ display: "block", marginBottom: 6 }}>Election Date</label>
           <input type="date" value={electionDate} onChange={(e) => setElectionDate(e.target.value)} required style={{ width: "100%", padding: 8 }} />
+        </div>
+
+        {/* ✅ NEW: Start & End Time Inputs */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: 6 }}>Start Time</label>
+            <input 
+              type="time" 
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              required 
+              style={{ width: "100%", padding: 8 }}
+            />
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: 6 }}>End Time</label>
+            <input 
+              type="time" 
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              required 
+              style={{ width: "100%", padding: 8 }}
+            />
+          </div>
         </div>
 
         <div>
